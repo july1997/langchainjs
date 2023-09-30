@@ -5,6 +5,7 @@ import type { CollectionMetadata, Where } from "chromadb/dist/main/types.js";
 import { Embeddings } from "../embeddings/base.js";
 import { VectorStore } from "./base.js";
 import { Document } from "../document.js";
+import * as process from "process";
 
 /**
  * Defines the arguments that can be passed to the `Chroma` class
@@ -108,7 +109,7 @@ export class Chroma extends VectorStore {
     if (!this.collection) {
       if (!this.index) {
         const { ChromaClient } = await Chroma.imports();
-        this.index = new ChromaClient({ path: this.url });
+        this.index = new ChromaClient({ path: this.url, auth: {provider: "basic", credentials: process.env.CHROMA_CLIENT_AUTH_CREDENTIALS} });
       }
       try {
         this.collection = await this.index.getOrCreateCollection({
