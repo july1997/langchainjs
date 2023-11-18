@@ -17,6 +17,16 @@ export interface ContextualCompressionRetrieverArgs extends BaseRetrieverInput {
  * A retriever that wraps a base retriever and compresses the results. It
  * retrieves relevant documents based on a given query and then compresses
  * these documents using a specified document compressor.
+ * @example
+ * ```typescript
+ * const retriever = new ContextualCompressionRetriever({
+ *   baseCompressor: new LLMChainExtractor(),
+ *   baseRetriever: new HNSWLib().asRetriever(),
+ * });
+ * const retrievedDocs = await retriever.getRelevantDocuments(
+ *   "What did the speaker say about Justice Breyer?",
+ * );
+ * ```
  */
 export class ContextualCompressionRetriever extends BaseRetriever {
   static lc_name() {
@@ -40,13 +50,14 @@ export class ContextualCompressionRetriever extends BaseRetriever {
     query: string,
     runManager?: CallbackManagerForRetrieverRun
   ): Promise<Document[]> {
-    const docs = await this.baseRetriever._getRelevantDocuments(
+    const docs = await this.baseRetriever.getRelevantDocuments(
       query,
-      runManager
+      runManager?.getChild("base_retriever")
     );
     const compressedDocs = await this.baseCompressor.compressDocuments(
       docs,
-      query
+      query,
+      runManager?.getChild("base_compressor")
     );
     return compressedDocs;
   }

@@ -44,6 +44,11 @@ export type Callbacks =
 
 export interface BaseCallbackConfig {
   /**
+   * Name for the tracer run for this call. Defaults to the name of the class.
+   */
+  runName?: string;
+
+  /**
    * Tags for this call and any sub-calls (eg. a Chain calling an LLM).
    * You can use these to filter calls.
    */
@@ -461,6 +466,24 @@ export class CallbackManagerForToolRun
   }
 }
 
+/**
+ * @example
+ * ```typescript
+ * const prompt = PromptTemplate.fromTemplate("What is the answer to {question}?");
+ *
+ * // Example of using LLMChain with OpenAI and a simple prompt
+ * const chain = new LLMChain({
+ *   llm: new ChatOpenAI({ temperature: 0.9 }),
+ *   prompt,
+ * });
+ *
+ * // Running the chain with a single question
+ * const result = await chain.call({
+ *   question: "What is the airspeed velocity of an unladen swallow?",
+ * });
+ * console.log("The answer is:", result);
+ * ```
+ */
 export class CallbackManager
   extends BaseCallbackManager
   implements BaseCallbackManagerMethods
@@ -493,7 +516,10 @@ export class CallbackManager
     prompts: string[],
     _runId: string | undefined = undefined,
     _parentRunId: string | undefined = undefined,
-    extraParams: Record<string, unknown> | undefined = undefined
+    extraParams: Record<string, unknown> | undefined = undefined,
+    _tags: string[] | undefined = undefined,
+    _metadata: Record<string, unknown> | undefined = undefined,
+    runName: string | undefined = undefined
   ): Promise<CallbackManagerForLLMRun[]> {
     return Promise.all(
       prompts.map(async (prompt) => {
@@ -511,7 +537,8 @@ export class CallbackManager
                     this._parentRunId,
                     extraParams,
                     this.tags,
-                    this.metadata
+                    this.metadata,
+                    runName
                   );
                 } catch (err) {
                   console.error(
@@ -542,7 +569,10 @@ export class CallbackManager
     messages: BaseMessage[][],
     _runId: string | undefined = undefined,
     _parentRunId: string | undefined = undefined,
-    extraParams: Record<string, unknown> | undefined = undefined
+    extraParams: Record<string, unknown> | undefined = undefined,
+    _tags: string[] | undefined = undefined,
+    _metadata: Record<string, unknown> | undefined = undefined,
+    runName: string | undefined = undefined
   ): Promise<CallbackManagerForLLMRun[]> {
     return Promise.all(
       messages.map(async (messageGroup) => {
@@ -553,7 +583,7 @@ export class CallbackManager
             consumeCallback(async () => {
               if (!handler.ignoreLLM) {
                 try {
-                  if (handler.handleChatModelStart)
+                  if (handler.handleChatModelStart) {
                     await handler.handleChatModelStart?.(
                       llm,
                       [messageGroup],
@@ -561,9 +591,10 @@ export class CallbackManager
                       this._parentRunId,
                       extraParams,
                       this.tags,
-                      this.metadata
+                      this.metadata,
+                      runName
                     );
-                  else if (handler.handleLLMStart) {
+                  } else if (handler.handleLLMStart) {
                     const messageString = getBufferString(messageGroup);
                     await handler.handleLLMStart?.(
                       llm,
@@ -572,7 +603,8 @@ export class CallbackManager
                       this._parentRunId,
                       extraParams,
                       this.tags,
-                      this.metadata
+                      this.metadata,
+                      runName
                     );
                   }
                 } catch (err) {
@@ -603,7 +635,10 @@ export class CallbackManager
     chain: Serialized,
     inputs: ChainValues,
     runId = uuidv4(),
-    runType: string | undefined = undefined
+    runType: string | undefined = undefined,
+    _tags: string[] | undefined = undefined,
+    _metadata: Record<string, unknown> | undefined = undefined,
+    runName: string | undefined = undefined
   ): Promise<CallbackManagerForChainRun> {
     await Promise.all(
       this.handlers.map((handler) =>
@@ -617,7 +652,8 @@ export class CallbackManager
                 this._parentRunId,
                 this.tags,
                 this.metadata,
-                runType
+                runType,
+                runName
               );
             } catch (err) {
               console.error(
@@ -643,7 +679,11 @@ export class CallbackManager
   async handleToolStart(
     tool: Serialized,
     input: string,
-    runId = uuidv4()
+    runId = uuidv4(),
+    _parentRunId: string | undefined = undefined,
+    _tags: string[] | undefined = undefined,
+    _metadata: Record<string, unknown> | undefined = undefined,
+    runName: string | undefined = undefined
   ): Promise<CallbackManagerForToolRun> {
     await Promise.all(
       this.handlers.map((handler) =>
@@ -656,7 +696,8 @@ export class CallbackManager
                 runId,
                 this._parentRunId,
                 this.tags,
-                this.metadata
+                this.metadata,
+                runName
               );
             } catch (err) {
               console.error(
@@ -683,7 +724,10 @@ export class CallbackManager
     retriever: Serialized,
     query: string,
     runId: string = uuidv4(),
-    _parentRunId: string | undefined = undefined
+    _parentRunId: string | undefined = undefined,
+    _tags: string[] | undefined = undefined,
+    _metadata: Record<string, unknown> | undefined = undefined,
+    runName: string | undefined = undefined
   ): Promise<CallbackManagerForRetrieverRun> {
     await Promise.all(
       this.handlers.map((handler) =>
@@ -696,7 +740,8 @@ export class CallbackManager
                 runId,
                 this._parentRunId,
                 this.tags,
-                this.metadata
+                this.metadata,
+                runName
               );
             } catch (err) {
               console.error(
@@ -845,7 +890,8 @@ export class CallbackManager
     }
 
     const verboseEnabled =
-      getEnvironmentVariable("LANGCHAIN_VERBOSE") || options?.verbose;
+      getEnvironmentVariable("LANGCHAIN_VERBOSE") === "true" ||
+      options?.verbose;
     const tracingV2Enabled =
       getEnvironmentVariable("LANGCHAIN_TRACING_V2") === "true";
 
@@ -910,6 +956,37 @@ function ensureHandler(
   return BaseCallbackHandler.fromMethods(handler);
 }
 
+/**
+ * @example
+ * ```typescript
+ * const prompt = PromptTemplate.fromTemplate(`What is the answer to {question}?`);
+ *
+ * // Example of using LLMChain to process a series of questions
+ * const chain = new LLMChain({
+ *   llm: new ChatOpenAI({ temperature: 0.9 }),
+ *   prompt,
+ * });
+ *
+ * // Process questions using the chain
+ * const processQuestions = async (questions) => {
+ *   for (const question of questions) {
+ *     const result = await chain.call({ question });
+ *     console.log(result);
+ *   }
+ * };
+ *
+ * // Example questions
+ * const questions = [
+ *   "What is your name?",
+ *   "What is your quest?",
+ *   "What is your favorite color?",
+ * ];
+ *
+ * // Run the example
+ * processQuestions(questions).catch(console.error);
+ *
+ * ```
+ */
 export class TraceGroup {
   private runManager?: CallbackManagerForChainRun;
 

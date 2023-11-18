@@ -1,6 +1,6 @@
 import { Redis, type RedisConfigNodejs } from "@upstash/redis";
 
-import { BaseCache, Generation } from "../schema/index.js";
+import { BaseCache, Generation, StoredGeneration } from "../schema/index.js";
 import {
   deserializeStoredGeneration,
   getCacheKey,
@@ -21,6 +21,21 @@ export type UpstashRedisCacheProps = {
 /**
  * A cache that uses Upstash as the backing store.
  * See https://docs.upstash.com/redis.
+ * @example
+ * ```typescript
+ * const cache = new UpstashRedisCache({
+ *   config: {
+ *     url: "UPSTASH_REDIS_REST_URL",
+ *     token: "UPSTASH_REDIS_REST_TOKEN",
+ *   },
+ * });
+ * // Initialize the OpenAI model with Upstash Redis cache for caching responses
+ * const model = new ChatOpenAI({
+ *   cache,
+ * });
+ * await model.invoke("How are you today?");
+ * const cachedValues = await cache.lookup("How are you today?", "llmKey");
+ * ```
  */
 export class UpstashRedisCache extends BaseCache {
   private redisClient: Redis;
@@ -46,14 +61,14 @@ export class UpstashRedisCache extends BaseCache {
   public async lookup(prompt: string, llmKey: string) {
     let idx = 0;
     let key = getCacheKey(prompt, llmKey, String(idx));
-    let value: string | null = await this.redisClient.get(key);
+    let value = await this.redisClient.get<StoredGeneration | null>(key);
     const generations: Generation[] = [];
 
     while (value) {
-      generations.push(deserializeStoredGeneration(JSON.parse(value)));
+      generations.push(deserializeStoredGeneration(value));
       idx += 1;
       key = getCacheKey(prompt, llmKey, String(idx));
-      value = await this.redisClient.get(key);
+      value = await this.redisClient.get<StoredGeneration | null>(key);
     }
 
     return generations.length > 0 ? generations : null;

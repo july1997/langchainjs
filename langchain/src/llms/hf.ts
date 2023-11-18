@@ -9,6 +9,9 @@ export interface HFInput {
   /** Model to use */
   model: string;
 
+  /** Custom inference endpoint URL to use */
+  endpointUrl?: string;
+
   /** Sampling temperature to use */
   temperature?: number;
 
@@ -33,6 +36,19 @@ export interface HFInput {
 /**
  * Class implementing the Large Language Model (LLM) interface using the
  * Hugging Face Inference API for text generation.
+ * @example
+ * ```typescript
+ * const model = new HuggingFaceInference({
+ *   model: "gpt2",
+ *   temperature: 0.7,
+ *   maxTokens: 50,
+ * });
+ *
+ * const res = await model.call(
+ *   "Question: What would be a good company name for a company that makes colorful socks?\nAnswer:"
+ * );
+ * console.log({ res });
+ * ```
  */
 export class HuggingFaceInference extends LLM implements HFInput {
   get lc_secrets(): { [key: string]: string } | undefined {
@@ -55,6 +71,8 @@ export class HuggingFaceInference extends LLM implements HFInput {
 
   apiKey: string | undefined = undefined;
 
+  endpointUrl: string | undefined = undefined;
+
   constructor(fields?: Partial<HFInput> & BaseLLMParams) {
     super(fields ?? {});
 
@@ -66,6 +84,8 @@ export class HuggingFaceInference extends LLM implements HFInput {
     this.frequencyPenalty = fields?.frequencyPenalty ?? this.frequencyPenalty;
     this.apiKey =
       fields?.apiKey ?? getEnvironmentVariable("HUGGINGFACEHUB_API_KEY");
+    this.endpointUrl = fields?.endpointUrl;
+
     if (!this.apiKey) {
       throw new Error(
         "Please set an API key for HuggingFace Hub in the environment variable HUGGINGFACEHUB_API_KEY or in the apiKey field of the HuggingFaceInference constructor."
@@ -83,7 +103,10 @@ export class HuggingFaceInference extends LLM implements HFInput {
     options: this["ParsedCallOptions"]
   ): Promise<string> {
     const { HfInference } = await HuggingFaceInference.imports();
-    const hf = new HfInference(this.apiKey);
+    const hf = this.endpointUrl
+      ? new HfInference(this.apiKey).endpoint(this.endpointUrl)
+      : new HfInference(this.apiKey);
+
     const res = await this.caller.callWithOptions(
       { signal: options.signal },
       hf.textGeneration.bind(hf),
